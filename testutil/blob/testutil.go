@@ -111,13 +111,15 @@ func generateRawWirePFBTx(t *testing.T, txConfig client.TxConfig, ns, message []
 	return rawTx
 }
 
-func generateSignedWirePayForBlob(t *testing.T, ns, message []byte, signer *types.KeyringSigner, options []types.TxBuilderOption) *types.MsgWirePayForBlob {
-	msg, err := types.NewWirePayForBlob(ns, message)
+func generateSignedWirePayForBlob(t *testing.T, ns, message []byte, signer *types.KeyringSigner, options []types.TxBuilderOption) *types.MsgPayForBlob {
+	sd := signer.GetSignerInfo()
+
+	addr, err := sd.GetAddress()
 	if err != nil {
-		t.Error(err)
+		panic(err)
 	}
 
-	err = msg.SignShareCommitment(signer, options...)
+	msg, err := types.NewPayForBlob(addr.String(), ns, message)
 	if err != nil {
 		t.Error(err)
 	}

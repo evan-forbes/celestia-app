@@ -2,7 +2,6 @@ package types
 
 import (
 	"bytes"
-	"errors"
 	"math"
 
 	"github.com/celestiaorg/celestia-app/app/encoding"
@@ -19,6 +18,12 @@ const (
 	URLBLobTx = "/blob.BlobTx"
 )
 
+var _ sdk.Tx = &BlobTx{}
+
+func (btx *BlobTx) GetMsgs() []sdk.Msg {
+	return nil
+}
+
 // ProcessedBlobTx caches the unmarshalled result of the BlobTx
 type ProcessedBlobTx struct {
 	Tx    sdk.Tx
@@ -34,7 +39,9 @@ func ProcessBlobTx(encfg encoding.Config, bTx *BlobTx) (ProcessedBlobTx, error) 
 		return ProcessedBlobTx{}, err
 	}
 
-	coreMsg := tmproto.Message{
+	msgs := sdkTx.GetMsgs()
+
+	coreMsg := tmproto.Blob{
 		NamespaceId: msg.GetNamespaceId(),
 		Data:        bTx.Blob,
 	}
@@ -51,7 +58,8 @@ func ProcessBlobTx(encfg encoding.Config, bTx *BlobTx) (ProcessedBlobTx, error) 
 // ValidateBasic checks for valid namespace length, declared blob size, share
 // commitments, signatures for those share commitment, and fulfills the sdk.Msg
 // interface.
-func (msg *MsgWirePayForBlob) ValidateBasic() error {
+func (msg *BlobTx) ValidateBasic() error {
+
 	if err := ValidateMessageNamespaceID(msg.GetNamespaceId()); err != nil {
 		return err
 	}
@@ -74,15 +82,15 @@ func (msg *MsgWirePayForBlob) ValidateBasic() error {
 
 // ValidateMessageShareCommitment returns an error if the share
 // commitment is invalid.
-func (msg *MsgWirePayForBlob) ValidateMessageShareCommitment() error {
+func (msg *MsgPayForBlob) ValidateMessageShareCommitment(b []byte) error {
 	// check that the commit is valid
 	commit := msg.ShareCommitment
-	calculatedCommit, err := CreateCommitment(msg.GetNamespaceId(), msg.Blob)
+	calculatedCommit, err := CreateCommitment(msg.GetNamespaceId(), b)
 	if err != nil {
 		return ErrCalculateCommit.Wrap(err.Error())
 	}
 
-	if !bytes.Equal(calculatedCommit, commit.ShareCommitment) {
+	if !bytes.Equal(calculatedCommit, commit) {
 		return ErrInvalidShareCommit
 	}
 
@@ -128,29 +136,6 @@ func HasWirePayForBlob(tx sdk.Tx) bool {
 		}
 	}
 	return false
-}
-
-// ExtractMsgWirePayForBlob attempts to extract a MsgWirePayForBlob from a
-// provided sdk.Tx. It returns an error if no MsgWirePayForBlob is found.
-func ExtractMsgWirePayForBlob(tx sdk.Tx) (*MsgWirePayForBlob, error) {
-	noWirePFBError := errors.New("sdk.Tx does not contain MsgWirePayForBlob sdk.Msg")
-	// perform a quick check before attempting a type check
-	if !HasWirePayForBlob(tx) {
-		return nil, noWirePFBError
-	}
-
-	// only support malleated transactions that contain a single sdk.Msg
-	if len(tx.GetMsgs()) != 1 {
-		return nil, errors.New("sdk.Txs with a single MsgWirePayForBlob are currently supported")
-	}
-
-	msg := tx.GetMsgs()[0]
-	wireMsg, ok := msg.(*MsgWirePayForBlob)
-	if !ok {
-		return nil, noWirePFBError
-	}
-
-	return wireMsg, nil
 }
 
 // MsgMinSquareSize returns the minimum square size that msgSize can be included

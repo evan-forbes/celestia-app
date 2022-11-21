@@ -141,10 +141,10 @@ func BuildPayForBlobTxFromWireTx(
 //
 // [Message layout rationale]: https://github.com/celestiaorg/celestia-specs/blob/e59efd63a2165866584833e91e1cb8a6ed8c8203/src/rationale/message_block_layout.md?plain=1#L12
 // [Non-interactive default rules]: https://github.com/celestiaorg/celestia-specs/blob/e59efd63a2165866584833e91e1cb8a6ed8c8203/src/rationale/message_block_layout.md?plain=1#L36
-func CreateCommitment(namespace, message []byte) ([]byte, error) {
+func CreateCommitment(namespace, rawBlob []byte) ([]byte, error) {
 	blob := coretypes.Blob{
 		NamespaceID: namespace,
-		Data:        message,
+		Data:        rawBlob,
 	}
 
 	// split into shares that are length delimited and include the namespace in
@@ -157,7 +157,7 @@ func CreateCommitment(namespace, message []byte) ([]byte, error) {
 	// the commitment is the root of a merkle mountain range with max tree size
 	// equal to the minimum square size the message can be included in. See
 	// https://github.com/celestiaorg/celestia-app/blob/fbfbf111bcaa056e53b0bc54d327587dee11a945/docs/architecture/adr-008-blocksize-independent-commitment.md
-	minSquareSize := MsgMinSquareSize(len(blob))
+	minSquareSize := MsgMinSquareSize(len(rawBlob))
 	treeSizes := merkleMountainRangeSizes(uint64(len(shares)), uint64(minSquareSize))
 	leafSets := make([][][]byte, len(treeSizes))
 	cursor := uint64(0)

@@ -56,9 +56,15 @@ func BuildPayForBlob(
 	nID namespace.ID,
 	message []byte,
 	opts ...types.TxBuilderOption,
-) (*types.MsgWirePayForBlob, error) {
+) (*types.MsgPayForBlob, error) {
+	rec := signer.GetSignerInfo()
+	addr, err := rec.GetAddress()
+	if err != nil {
+		return nil, err
+	}
+
 	// create the raw WirePayForBlob transaction
-	wpfb, err := types.NewWirePayForBlob(nID, message)
+	wpfb, err := types.NewPayForBlob(addr.String(), nID, message)
 	if err != nil {
 		return nil, err
 	}
@@ -69,28 +75,17 @@ func BuildPayForBlob(
 		return nil, err
 	}
 
-	// generate the signatures for each `MsgPayForBlob` using the `KeyringSigner`,
-	// then set the gas limit for the tx
-	err = wpfb.SignShareCommitment(signer, opts...)
-	if err != nil {
-		return nil, err
-	}
-
 	return wpfb, nil
 }
 
 // SignPayForBlob signs a PayForBlob transaction.
 func SignPayForBlob(
 	signer *types.KeyringSigner,
-	pfb *types.MsgWirePayForBlob,
+	pfb *types.MsgPayForBlob,
 	opts ...types.TxBuilderOption,
 ) (signing.Tx, error) {
-	// Build and sign the final `WirePayForBlob` tx that now contains the signatures
-	// for potential `MsgPayForBlob`s
-	builder := signer.NewTxBuilder()
-	for _, opt := range opts {
-		opt(builder)
-	}
+	// Build and sign the final `PayForBlob` tx
+	builder := signer.NewTxBuilder(opts...)
 	return signer.BuildSignedTx(
 		builder,
 		pfb,
