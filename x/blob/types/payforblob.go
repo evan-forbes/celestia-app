@@ -24,6 +24,33 @@ const (
 	NamespaceIDSize      = appconsts.NamespaceSize
 )
 
+// NewPayForBlob creates a new MsgPayForBlob by using the namespace and blob to
+// generate a share commitment. Note that the blob is not included in the
+// returned MsgPayForBlob.
+func NewPayForBlob(signer string, namespace, blob []byte) (*MsgPayForBlob, error) {
+	// sanity check namespace ID size
+	if len(namespace) != NamespaceIDSize {
+		return nil, ErrInvalidNamespaceLen.Wrapf("got: %d want: %d",
+			len(namespace),
+			NamespaceIDSize,
+		)
+	}
+
+	shareCommitment, err := CreateCommitment(namespace, blob)
+	if err != nil {
+		return nil, err
+	}
+
+	pfb := &MsgPayForBlob{
+		Signer:          signer,
+		NamespaceId:     namespace,
+		BlobSize:        uint64(len(blob)),
+		ShareCommitment: shareCommitment,
+	}
+
+	return pfb, nil
+}
+
 var _ sdk.Msg = &MsgPayForBlob{}
 
 // Route fullfills the sdk.Msg interface
@@ -130,7 +157,7 @@ func CreateCommitment(namespace, message []byte) ([]byte, error) {
 	// the commitment is the root of a merkle mountain range with max tree size
 	// equal to the minimum square size the message can be included in. See
 	// https://github.com/celestiaorg/celestia-app/blob/fbfbf111bcaa056e53b0bc54d327587dee11a945/docs/architecture/adr-008-blocksize-independent-commitment.md
-	minSquareSize := MsgMinSquareSize(len(message))
+	minSquareSize := MsgMinSquareSize(len(blob))
 	treeSizes := merkleMountainRangeSizes(uint64(len(shares)), uint64(minSquareSize))
 	leafSets := make([][][]byte, len(treeSizes))
 	cursor := uint64(0)

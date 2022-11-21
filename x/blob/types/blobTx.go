@@ -3,78 +3,50 @@ package types
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"math"
 
+	"github.com/celestiaorg/celestia-app/app/encoding"
 	"github.com/celestiaorg/celestia-app/pkg/appconsts"
 	shares "github.com/celestiaorg/celestia-app/pkg/shares"
 	"github.com/celestiaorg/nmt/namespace"
-	sdkclient "github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	"golang.org/x/exp/constraints"
 )
 
-var _ sdk.Msg = &MsgWirePayForBlob{}
+const (
+	URLBLobTx = "/blob.BlobTx"
+)
 
-// NewWirePayForBlob creates a new MsgWirePayForBlob by using the namespace and
-// blob to generate a share commitment. Note that the generated share
-// commitment still needs to be signed using the SignShareCommitment method.
-func NewWirePayForBlob(namespace, blob []byte) (*MsgWirePayForBlob, error) {
-	// sanity check namespace ID size
-	if len(namespace) != NamespaceIDSize {
-		return nil, ErrInvalidNamespaceLen.Wrapf("got: %d want: %d",
-			len(namespace),
-			NamespaceIDSize,
-		)
-	}
-
-	out := &MsgWirePayForBlob{
-		NamespaceId:     namespace,
-		BlobSize:        uint64(len(blob)),
-		Blob:            blob,
-		ShareCommitment: &ShareCommitAndSignature{},
-	}
-
-	// generate the share commitment
-	commit, err := CreateCommitment(namespace, blob)
-	if err != nil {
-		return nil, err
-	}
-	out.ShareCommitment = &ShareCommitAndSignature{ShareCommitment: commit}
-	return out, nil
+// ProcessedBlobTx caches the unmarshalled result of the BlobTx
+type ProcessedBlobTx struct {
+	Tx    sdk.Tx
+	Blobs [][]byte // todo, probably switch this to coretypes.Blob after we rename that
+	PFBs  []*MsgPayForBlob
 }
 
-// SignShareCommitment creates and signs the share commitment associated
-// with a MsgWirePayForBlob.
-func (msg *MsgWirePayForBlob) SignShareCommitment(signer *KeyringSigner, options ...TxBuilderOption) error {
-	addr, err := signer.GetSignerInfo().GetAddress()
+// ProcessWirePayForBlob performs the malleation process that occurs before
+// creating a block. It unmarshals and parses the BlobTx.
+func ProcessBlobTx(encfg encoding.Config, bTx *BlobTx) (ProcessedBlobTx, error) {
+	sdkTx, err := encfg.TxConfig.TxDecoder()(bTx.Tx)
 	if err != nil {
-		return err
+		return ProcessedBlobTx{}, err
 	}
 
-	if addr == nil {
-		return errors.New("failed to get address")
-	}
-	if addr.Empty() {
-		return errors.New("failed to get address")
+	coreMsg := tmproto.Message{
+		NamespaceId: msg.GetNamespaceId(),
+		Data:        bTx.Blob,
 	}
 
-	msg.Signer = addr.String()
-	// create an entire MsgPayForBlob and sign over it (including the signature in the commitment)
-	builder := signer.NewTxBuilder(options...)
-
-	sig, err := msg.createPayForBlobSignature(signer, builder)
+	// wrap the signed transaction data
+	pfb, err := msg.unsignedPayForBlob()
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
-	msg.ShareCommitment.Signature = sig
-	return nil
+
+	return &coreMsg, pfb, nil
 }
-
-func (msg *MsgWirePayForBlob) Route() string { return RouterKey }
 
 // ValidateBasic checks for valid namespace length, declared blob size, share
 // commitments, signatures for those share commitment, and fulfills the sdk.Msg
@@ -142,77 +114,6 @@ func ValidateMessageNamespaceID(ns namespace.ID) error {
 	}
 
 	return nil
-}
-
-// GetSigners returns the addresses of the message signers
-func (msg *MsgWirePayForBlob) GetSigners() []sdk.AccAddress {
-	address, err := sdk.AccAddressFromBech32(msg.Signer)
-	if err != nil {
-		panic(err)
-	}
-	return []sdk.AccAddress{address}
-}
-
-// createPayForBlobSignature generates the signature for a MsgPayForBlob for a
-// single squareSize using the info from a MsgWirePayForBlob.
-func (msg *MsgWirePayForBlob) createPayForBlobSignature(signer *KeyringSigner, builder sdkclient.TxBuilder) ([]byte, error) {
-	pfb, err := msg.unsignedPayForBlob()
-	if err != nil {
-		return nil, err
-	}
-	tx, err := signer.BuildSignedTx(builder, pfb)
-	if err != nil {
-		return nil, err
-	}
-	sigs, err := tx.GetSignaturesV2()
-	if err != nil {
-		return nil, err
-	}
-	if len(sigs) != 1 {
-		return nil, fmt.Errorf("expected a single signer: got %d", len(sigs))
-	}
-	sig, ok := sigs[0].Data.(*signing.SingleSignatureData)
-	if !ok {
-		return nil, fmt.Errorf("expected a single signer")
-	}
-	return sig.Signature, nil
-}
-
-// unsignedPayForBlob uses the data in the MsgWirePayForBlob
-// to create a new MsgPayForBlob.
-func (msg *MsgWirePayForBlob) unsignedPayForBlob() (*MsgPayForBlob, error) {
-	// create the commitment using the blob
-	commit, err := CreateCommitment(msg.NamespaceId, msg.Blob)
-	if err != nil {
-		return nil, err
-	}
-
-	spfb := MsgPayForBlob{
-		NamespaceId:     msg.NamespaceId,
-		BlobSize:        msg.BlobSize,
-		ShareCommitment: commit,
-		Signer:          msg.Signer,
-	}
-	return &spfb, nil
-}
-
-// ProcessWirePayForBlob performs the malleation process that occurs before
-// creating a block. It parses the MsgWirePayForBlob to produce the components
-// needed to create a single MsgPayForBlob.
-func ProcessWirePayForBlob(msg *MsgWirePayForBlob) (*tmproto.Blob, *MsgPayForBlob, []byte, error) {
-	// add the blob to the list of core blobs to be returned to celestia-core
-	coreMsg := tmproto.Blob{
-		NamespaceId: msg.GetNamespaceId(),
-		Data:        msg.GetBlob(),
-	}
-
-	// wrap the signed transaction data
-	pfb, err := msg.unsignedPayForBlob()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return &coreMsg, pfb, msg.ShareCommitment.Signature, nil
 }
 
 // HasWirePayForBlob performs a quick but not definitive check to see if a tx

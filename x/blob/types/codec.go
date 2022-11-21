@@ -12,19 +12,21 @@ import (
 var ModuleCdc = codec.NewProtoCodec(codectypes.NewInterfaceRegistry())
 
 func RegisterCodec(cdc *codec.LegacyAmino) {
-	cdc.RegisterConcrete(&MsgWirePayForBlob{}, URLMsgWirePayForBlob, nil)
 	cdc.RegisterConcrete(&MsgPayForBlob{}, URLMsgPayForBlob, nil)
+	cdc.RegisterConcrete(&BlobTx{}, URLBLobTx, nil)
 }
 
 func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgWirePayForBlob{},
-	)
-
-	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgPayForBlob{},
 	)
 
+	registry.RegisterImplementations((*sdk.Tx)(nil),
+		&BlobTx{},
+	)
+
+	// todo: remove these after we remove the need to test with only the local
+	// encoding config due to malleation
 	registry.RegisterInterface(
 		"cosmos.auth.v1beta1.BaseAccount",
 		(*authtypes.AccountI)(nil),

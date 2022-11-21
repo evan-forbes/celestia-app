@@ -14,30 +14,12 @@ service Msg {
   }
 }
 
-// MsgWirePayForBlob describes the format of data that is sent over the wire
-// for each PayForBlob
-message MsgWirePayForBlob {
-  string signer = 1;
-  bytes namespace_id = 2; // assume this is 8 bytes!
-  uint64 blob_size = 3;
-  bytes blob = 4;
-  // field number 6 is obsolete and was used for `repeated
-  // ShareCommitAndSignature` when a MsgWirePayForBlob included multiple
-  // blob share commitments (one per square size).
-  ShareCommitAndSignature share_commitment = 7;
-}
-
-// MsgWirePayForBlobResponse describes the response returned after the
-// submission of a WirePayForBlob
-message MsgWirePayForBlobResponse {}
-
-// ShareCommitAndSignature defines the
-message ShareCommitAndSignature {
-  // share_commitment is the root of a binary Merkle tree that has leaves which
-  // are subtree roots of the relevant message shares in the original data
-  // square.
-  bytes share_commitment = 2;
-  bytes signature = 3; // signature on one SignedTransactionPayForBlob
+// BlobTx wraps an encoded sdk.Tx with a second field to contain a blob of data.
+// The raw bytes of the blob are not signed over, instead we verify the blob
+// using the MsgPayForBlob that is signed over in the encoded sdk.Tx.
+message BlobTx {
+  bytes tx = 34; // we use arbitrarily large field numbers here to reduce the probability of field collisions in protobuf
+  repeated bytes blobs = 57;
 }
 
 // MsgPayForBlob is what gets signed by users when creating
