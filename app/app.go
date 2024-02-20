@@ -87,6 +87,7 @@ import (
 	"github.com/celestiaorg/celestia-app/app/encoding"
 	"github.com/celestiaorg/celestia-app/pkg/appconsts"
 	"github.com/celestiaorg/celestia-app/pkg/proof"
+	"github.com/celestiaorg/celestia-app/pkg/summary"
 	blobmodule "github.com/celestiaorg/celestia-app/x/blob"
 	blobmodulekeeper "github.com/celestiaorg/celestia-app/x/blob/keeper"
 	blobmoduletypes "github.com/celestiaorg/celestia-app/x/blob/types"
@@ -517,6 +518,7 @@ func New(
 
 	app.QueryRouter().AddRoute(proof.TxInclusionQueryPath, proof.QueryTxInclusionProof)
 	app.QueryRouter().AddRoute(proof.ShareInclusionQueryPath, proof.QueryShareInclusionProof)
+	app.QueryRouter().AddRoute("namespaceSummary", summary.QueryNamespaceSummary)
 
 	app.mm.RegisterInvariants(&app.CrisisKeeper)
 	app.mm.RegisterRoutes(app.Router(), app.QueryRouter(), encodingConfig.Amino)
